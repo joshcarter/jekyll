@@ -30,16 +30,21 @@ module Jekyll
     def read_yaml(base, name)
       self.content = File.read(File.join(base, name))
 
-      if self.content =~ /^(---.*?\n.*?)\n---.*?\n(.*)/m
-        self.data = YAML.load($1)
-        self.content = $2
-        
-        # if we have an extended section, separate that from content
-        if self.is_a? Jekyll::Post
-          if self.data.key? 'extended'
-            marker = self.data['extended']
-            self.content, self.extended = self.content.split(marker + "\n", 2)
+      if self.content =~ /^(---\s*\n.*?\n?)^(---\s*$\n?)/m
+        self.content = $POSTMATCH
+
+        begin
+          self.data = YAML.load($1)
+
+          # if we have an extended section, separate that from content
+          if self.is_a? Jekyll::Post
+            if self.data.key? 'extended'
+              marker = self.data['extended']
+              self.content, self.extended = self.content.split(marker + "\n", 2)
+            end
           end
+        rescue => e
+          puts "YAML Exception reading #{name}: #{e.message}"
         end
       end
 
