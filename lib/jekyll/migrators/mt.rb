@@ -1,11 +1,20 @@
 # Created by Nick Gerakines, open source and publically available under the
 # MIT license. Use this module at your own risk.
 # I'm an Erlang/Perl/C++ guy so please forgive my dirty ruby.
-
+ 
+# Josh Carter mods:
+# - Extract categories
+# - Add category to post YAML header
+# - Create posts under category paths
+# - Underbars in post names instead of dashes (specific to my site)
+ 
 require 'rubygems'
 require 'sequel'
 require 'fileutils'
 require 'yaml'
+require 'pp'
+require 'ostruct'
+require 'fileutils'
 
 # NOTE: This converter requires Sequel and the MySQL gems.
 # The MySQL gem can be difficult to install on OS X. Once you have MySQL
@@ -15,53 +24,108 @@ require 'yaml'
 
 module Jekyll
   module MT
-    # This query will pull blog posts from all entries across all blogs. If
-    # you've got unpublished, deleted or otherwise hidden posts please sift
-    # through the created posts to make sure nothing is accidently published.
-    QUERY = "SELECT entry_id, \
-                    entry_basename, \
-                    entry_text, \
-                    entry_text_more, \
-                    entry_authored_on, \
-                    entry_title, \
-                    entry_convert_breaks \
-             FROM mt_entry"
-
     def self.process(dbname, user, pass, host = 'localhost')
       db = Sequel.mysql(dbname, :user => user, :password => pass, :host => host, :encoding => 'utf8')
+      # db = Sequel.sqlite(dbname, :encoding => 'utf8')
 
-      FileUtils.mkdir_p "_posts"
+      categories = {}
+      posts = {}
 
-      db[QUERY].each do |post|
-        title = post[:entry_title]
-        slug = post[:entry_basename].gsub(/_/, '-')
-        date = post[:entry_authored_on]
-        content = post[:entry_text]
-        more_content = post[:entry_text_more]
-        entry_convert_breaks = post[:entry_convert_breaks]
+      #
+      # Extract categories
+      #
+      db["SELECT * FROM mt_category"].each do |c|
+        category = OpenStruct.new
+        category.category_id = c[:category_id].to_i
+        category.name = c[:category_basename]
+        category.parent = c[:category_parent].to_i
+        
+        category.parent = nil if (category.parent == 0)
+        
+        categories[category.category_id] = category
+      end
+      
+      #
+      # Flatten nested categories
+      #
+      categories.each_value do |c|
+        path = [c.name]
+        parent_id = c.parent
+          
+        while parent_id
+          parent = categories[parent_id]
+          path.unshift parent.name
+          parent_id = parent.parent
+        end
+        
+        c.path = path.join '/'
+      end
+
+      # puts 'Categories:'
+      # categories.keys.sort.each { |k| puts " - #{k} -> #{categories[k].path}" }
+      
+      db["SELECT * FROM mt_placement"].each do |p|
+        next if p[:placement_is_primary].to_i == 0
+        
+        post = OpenStruct.new
+        post.post_id = p[:placement_entry_id]
+        post.category_id = p[:placement_category_id]
+        post.category = categories[p[:placement_category_id]].path
+        
+        posts[post.post_id] = post
+      end
+
+      # puts 'Posts (after placements):'
+      # posts.keys.sort.each { |k| puts " - #{k} -> #{posts[k].category}"}
+
+      db["SELECT * FROM mt_entry"].each do |p|
+        post = posts[p[:entry_id]] || OpenStruct.new
+        
+        post.title = p[:entry_title].to_s
+        post.slug = p[:entry_basename].gsub(/_/, '_')
+        post.date = p[:entry_authored_on]
+        post.content = p[:entry_text]
+        
+        more_content = p[:entry_text_more]
 
         # Be sure to include the body and extended body.
-        if more_content != nil
-          content = content + " \n" + more_content
+        if p[:entry_text_more] != nil
+          post.content += "\n"
+          post.content += "\n"
+          post.content += ":EXTENDED:\n"
+          post.content += "\n"
+          post.content += p[:entry_text_more]
         end
 
         # Ideally, this script would determine the post format (markdown,
         # html, etc) and create files with proper extensions. At this point
         # it just assumes that markdown will be acceptable.
-        name = [date.year, date.month, date.day, slug].join('-') + '.' +
-               self.suffix(entry_convert_breaks)
+        post.name = [post.date.year, post.date.month, 
+                     post.date.day, post.slug].join('-') + '.' +
+                     self.suffix(p[:entry_convert_breaks])
 
-        data = {
+        post.data = {
            'layout' => 'post',
-           'title' => title.to_s,
-           'mt_id' => post[:entry_id],
-           'date' => date
+           'title' => post.title,
+           'date' => post.date,
+           'category' => post.category
          }.delete_if { |k,v| v.nil? || v == '' }.to_yaml
+      end
 
-        File.open("_posts/#{name}", "w") do |f|
-          f.puts data
+      # puts 'Posts:'
+      # posts.keys.sort.each { |k| puts " - #{k} -> #{posts[k].name} (#{posts[k].category})"}
+      
+      FileUtils.mkdir_p "_posts"
+      posts.keys.sort.each do |post_id|
+        post = posts[post_id]
+        dir = "_posts/#{post.category}"
+        
+        FileUtils.mkdir_p(dir)
+        
+        File.open(File.join(dir, post.name), "w") do |f|
+          f.puts post.data
           f.puts "---"
-          f.puts content
+          f.puts post.content
         end
       end
     end
