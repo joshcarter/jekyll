@@ -14,7 +14,11 @@ module Jekyll
   module Convertible
     # Returns the contents as a String.
     def to_s
-      self.content || ''
+      if self.is_a? Jekyll::Post
+        (self.content || '') + (self.extended || '')
+      else
+        self.content || ''
+      end
     end
 
     # Read the YAML frontmatter.
@@ -26,13 +30,16 @@ module Jekyll
     def read_yaml(base, name)
       self.content = File.read(File.join(base, name))
 
-      if self.content =~ /^(---\s*\n.*?\n?)^(---\s*$\n?)/m
-        self.content = $POSTMATCH
-
-        begin
-          self.data = YAML.load($1)
-        rescue => e
-          puts "YAML Exception reading #{name}: #{e.message}"
+      if self.content =~ /^(---.*?\n.*?)\n---.*?\n(.*)/m
+        self.data = YAML.load($1)
+        self.content = $2
+        
+        # if we have an extended section, separate that from content
+        if self.is_a? Jekyll::Post
+          if self.data.key? 'extended'
+            marker = self.data['extended']
+            self.content, self.extended = self.content.split(marker + "\n", 2)
+          end
         end
       end
 
@@ -43,7 +50,23 @@ module Jekyll
     #
     # Returns nothing.
     def transform
-      self.content = converter.convert(self.content)
+      
+      case self.ext
+      when ".textile":
+        converter = site.getConverterImpl(Jekyll::TextileConverter)
+        self.ext = ".html"
+        self.content = converter.convert(self.content)
+        if self.is_a? Jekyll::Post and self.extended
+          self.extended = converter.convert(self.extended).to_html
+        end
+      when ".markdown":
+        converter = site.getConverterImpl(Jekyll::MarkdownConverter)
+        self.ext = ".html"
+        self.content = converter.convert(self.content)
+        if self.is_a? Jekyll::Post and self.extended
+          self.extended = converter.convert(self.extended)
+        end
+      end
     end
 
     # Determine the extension depending on content_type.
@@ -86,6 +109,15 @@ module Jekyll
       # output keeps track of what will finally be written
       self.output = self.content
 
+      if self.is_a? Jekyll::Post 
+        # make sure we update the payload with transformed data
+        payload["page"].merge!({"content" => self.content, "extended" => self.extended})
+
+        if self.extended
+          self.output = self.content + self.extended
+        end
+      end
+
       # recursively render layouts
       layout = layouts[self.data["layout"]]
       used = Set.new([layout])
@@ -107,6 +139,21 @@ module Jekyll
           end
         end
       end
+    end
+
+    # Process scripts for the layout
+    #   +scripts+ is a Array of [{"name" => "foo", "command": "foo.py"}]
+    #
+    # Returns a Hash of {"foo" => "... script output ..."}
+    def do_scripts(scripts)
+      result = {}
+      scripts.each do |script|
+        p = IO.popen(File.join(@base, '_scripts', script["command"]) +
+                     ' ' + @base)
+        result[script["name"]] = p.read || ""
+        p.close
+      end
+      result
     end
   end
 end

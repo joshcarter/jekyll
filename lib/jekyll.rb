@@ -33,6 +33,7 @@ require 'jekyll/convertible'
 require 'jekyll/layout'
 require 'jekyll/page'
 require 'jekyll/post'
+require 'jekyll/archive'
 require 'jekyll/filters'
 require 'jekyll/static_file'
 require 'jekyll/errors'
@@ -64,8 +65,7 @@ module Jekyll
     'lsi'          => false,
     'pygments'     => false,
     'markdown'     => 'maruku',
-    'permalink'    => 'date',
-    
+    'permalink'    => 'date',    
     'markdown_ext' => 'markdown,mkd,mkdn,md',
     'textile_ext'  => 'textile',
 

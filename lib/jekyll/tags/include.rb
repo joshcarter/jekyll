@@ -1,9 +1,9 @@
 module Jekyll
-
   class IncludeTag < Liquid::Tag
-    def initialize(tag_name, file, tokens)
+    def initialize(tag_name, markup, tokens)
       super
-      @file = file.strip
+
+      @template = markup.strip
     end
 
     def render(context)

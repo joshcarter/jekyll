@@ -2,7 +2,12 @@ Gemfile.lock
 test/dest
 *.gem
 pkg/
+<<<<<<< HEAD
 *.swp
 *~
 _site/
 .bundle/
+=======
+\#*
+.\#*
+>>>>>>> c5d443dc69fafcc47f8ef09c20af24b0414cca7f
