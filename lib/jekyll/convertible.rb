@@ -1,4 +1,5 @@
 require 'set'
+require 'pp'
 
 # Convertible provides methods for converting a pagelike item
 # from a certain type of markup into actual content
@@ -32,9 +33,16 @@ module Jekyll
 
       if self.content =~ /^(---\s*\n.*?\n?)^(---\s*$\n?)/m
         self.content = $POSTMATCH
+        self.data = {}
 
         begin
-          self.data = YAML.load($1)
+          if self.is_a? Jekyll::Post
+            if self.site.config.key? 'post_defaults'
+              self.data.merge! self.site.config['post_defaults']
+            end
+          end
+
+          self.data.merge! YAML.load($1)
 
           # if we have an extended section, separate that from content
           if self.is_a? Jekyll::Post
